@@ -5,14 +5,16 @@ Handles all GUI components and user interactions using PySide6 (Qt for Python).
 """
 
 import logging
+from decimal import Decimal
 from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QDateEdit, QSpinBox, QDoubleSpinBox, QPushButton,
-    QTextEdit, QTableWidget, QTableWidgetItem, QGroupBox, QMessageBox
+    QTextEdit, QTableWidget, QTableWidgetItem, QGroupBox
 )
 from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPainter
+from PySide6.QtCharts import QChart, QChartView, QBarSeries, QBarSet, QBarCategoryAxis, QValueAxis
 from db import DatabaseManager
 from psycopg2 import Error
 
@@ -48,6 +50,7 @@ class ExpenseTrackerUI(QMainWindow):
         main_layout.addWidget(right_panel, 1)
 
         central_widget.setLayout(main_layout)
+        self._refresh_monthly_chart(self.year_selector.value())
 
     def _create_left_panel(self) -> QGroupBox:
         """Create the form panel for adding expenses."""
@@ -143,6 +146,28 @@ class ExpenseTrackerUI(QMainWindow):
         self.query_status_label.setWordWrap(True)
         layout.addWidget(self.query_status_label)
 
+        # Monthly chart controls
+        layout.addWidget(QLabel("Monthly Expenses (Year-wise):"))
+        chart_controls_layout = QHBoxLayout()
+        chart_controls_layout.addWidget(QLabel("Year:"))
+
+        self.year_selector = QSpinBox()
+        self.year_selector.setRange(2000, 2100)
+        self.year_selector.setValue(QDate.currentDate().year())
+        chart_controls_layout.addWidget(self.year_selector)
+
+        self.refresh_chart_button = QPushButton("Show Monthly Chart")
+        self.refresh_chart_button.clicked.connect(self._on_refresh_chart)
+        chart_controls_layout.addWidget(self.refresh_chart_button)
+        chart_controls_layout.addStretch()
+        layout.addLayout(chart_controls_layout)
+
+        self.monthly_chart = QChart()
+        self.monthly_chart_view = QChartView(self.monthly_chart)
+        self.monthly_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.monthly_chart_view.setMinimumHeight(260)
+        layout.addWidget(self.monthly_chart_view)
+
         group.setLayout(layout)
         return group
 
@@ -184,6 +209,11 @@ class ExpenseTrackerUI(QMainWindow):
 
             # Clear form
             self._clear_form()
+
+            # Refresh chart if inserted expense belongs to selected year
+            inserted_year = int(expense_date.split("-")[0])
+            if inserted_year == self.year_selector.value():
+                self._refresh_monthly_chart(inserted_year)
 
         except Error as e:
             self._show_error(f"Database error: {str(e)}")
@@ -242,7 +272,6 @@ class ExpenseTrackerUI(QMainWindow):
             for col_idx, column in enumerate(columns):
                 value = result.get(column, "")
                 # Convert to string for display
-                from decimal import Decimal
                 if isinstance(value, Decimal):
                     value = f"${value:.2f}"
                 elif isinstance(value, (datetime,)):
@@ -254,6 +283,61 @@ class ExpenseTrackerUI(QMainWindow):
 
         # Resize columns to content
         self.results_table.resizeColumnsToContents()
+
+    def _on_refresh_chart(self) -> None:
+        """Handle the monthly chart refresh action for the selected year."""
+        selected_year = self.year_selector.value()
+        self._refresh_monthly_chart(selected_year)
+
+    def _refresh_monthly_chart(self, year: int) -> None:
+        """
+        Load monthly totals for a year and render a bar chart.
+
+        Args:
+            year: Year to visualize
+        """
+        try:
+            results = self.db_manager.get_monthly_totals_by_year(year)
+
+            month_totals = {month: 0.0 for month in range(1, 13)}
+            for row in results:
+                month = int(row["month"])
+                total_amount = float(row["total_amount"] or 0)
+                month_totals[month] = total_amount
+
+            chart = QChart()
+            chart.setTitle(f"Monthly Total Expenses - {year}")
+
+            bar_set = QBarSet(str(year))
+            for month in range(1, 13):
+                bar_set.append(month_totals[month])
+
+            series = QBarSeries()
+            series.append(bar_set)
+            chart.addSeries(series)
+
+            month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            axis_x = QBarCategoryAxis()
+            axis_x.append(month_labels)
+            chart.addAxis(axis_x, Qt.AlignmentFlag.AlignBottom)
+            series.attachAxis(axis_x)
+
+            axis_y = QValueAxis()
+            max_total = max(month_totals.values())
+            axis_y.setRange(0, (max_total * 1.1) if max_total > 0 else 10)
+            axis_y.setLabelFormat("%.2f")
+            chart.addAxis(axis_y, Qt.AlignmentFlag.AlignLeft)
+            series.attachAxis(axis_y)
+
+            chart.legend().setVisible(False)
+            self.monthly_chart_view.setChart(chart)
+            self._show_query_success(f"Monthly chart loaded for {year}")
+
+        except Error as e:
+            self._show_query_error(f"Database error while loading chart: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error loading monthly chart: {e}")
+            self._show_query_error(f"Error while loading chart: {str(e)}")
 
     def _clear_form(self) -> None:
         """Clear all form inputs."""

@@ -17,14 +17,19 @@ The application will:
 import os
 import sys
 import logging
-from dotenv import load_dotenv
 from PySide6.QtWidgets import QApplication, QMessageBox
 from db import DatabaseManager
 from ui import ExpenseTrackerUI
 from psycopg2 import Error
 
-# Load environment variables from .env file
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+# Load environment variables from .env file when python-dotenv is available
+if load_dotenv:
+    load_dotenv()
 
 # Configure logging
 logging.basicConfig(

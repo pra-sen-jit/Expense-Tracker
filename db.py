@@ -8,10 +8,9 @@ Handles:
 - Connection pooling
 """
 
-import os
 import logging
 import psycopg2
-from psycopg2 import pool, sql, Error
+from psycopg2 import pool, Error
 from typing import List, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -244,6 +243,27 @@ class DatabaseManager:
         finally:
             if conn:
                 self.return_connection(conn)
+
+    def get_monthly_totals_by_year(self, year: int) -> List[Dict[str, Any]]:
+        """
+        Return monthly expense totals for a given year.
+
+        Args:
+            year: Calendar year (e.g., 2026)
+
+        Returns:
+            List of rows with keys: month, total_amount
+        """
+        query = """
+        SELECT
+            EXTRACT(MONTH FROM expense_date)::INT AS month,
+            COALESCE(SUM(amount), 0)::NUMERIC(10,2) AS total_amount
+        FROM expenses
+        WHERE EXTRACT(YEAR FROM expense_date)::INT = %s
+        GROUP BY month
+        ORDER BY month;
+        """
+        return self.execute_query(query, (year,))
 
     @staticmethod
     def _is_select_query(query: str) -> bool:
