@@ -69,7 +69,7 @@ class ExpenseTrackerUI(QMainWindow):
         layout.addWidget(self.date_input)
 
         # Amount input
-        layout.addWidget(QLabel("Amount ($):"))
+        layout.addWidget(QLabel("Amount (₹):"))
         self.amount_input = QDoubleSpinBox()
         self.amount_input.setMinimum(0.0)
         self.amount_input.setMaximum(999999.99)
@@ -161,6 +161,14 @@ class ExpenseTrackerUI(QMainWindow):
         chart_controls_layout.addWidget(self.refresh_chart_button)
         chart_controls_layout.addStretch()
         layout.addLayout(chart_controls_layout)
+
+        self.year_total_label = QLabel("Year Total: ₹0.00")
+        self.year_total_label.setStyleSheet("font-weight: bold;")
+        self.year_total_label.setToolTip(
+            "Comparison vs previous year: ↑ red = increased spending, "
+            "↓ green = decreased spending, → gray = unchanged."
+        )
+        layout.addWidget(self.year_total_label)
 
         self.monthly_chart = QChart()
         self.monthly_chart_view = QChartView(self.monthly_chart)
@@ -273,7 +281,7 @@ class ExpenseTrackerUI(QMainWindow):
                 value = result.get(column, "")
                 # Convert to string for display
                 if isinstance(value, Decimal):
-                    value = f"${value:.2f}"
+                    value = f"₹{value:.2f}"
                 elif isinstance(value, (datetime,)):
                     value = value.isoformat()
 
@@ -298,12 +306,41 @@ class ExpenseTrackerUI(QMainWindow):
         """
         try:
             results = self.db_manager.get_monthly_totals_by_year(year)
+            previous_year_results = self.db_manager.get_monthly_totals_by_year(year - 1)
 
             month_totals = {month: 0.0 for month in range(1, 13)}
             for row in results:
                 month = int(row["month"])
                 total_amount = float(row["total_amount"] or 0)
                 month_totals[month] = total_amount
+
+            year_total = sum(month_totals.values())
+            previous_month_totals = {month: 0.0 for month in range(1, 13)}
+            for row in previous_year_results:
+                month = int(row["month"])
+                total_amount = float(row["total_amount"] or 0)
+                previous_month_totals[month] = total_amount
+
+            previous_year_total = sum(previous_month_totals.values())
+            delta = year_total - previous_year_total
+
+            if delta > 0:
+                indicator = "↑"
+                color = "#C62828"
+                delta_text = f"+₹{abs(delta):,.2f}"
+            elif delta < 0:
+                indicator = "↓"
+                color = "#2E7D32"
+                delta_text = f"₹{abs(delta):,.2f}"
+            else:
+                indicator = "→"
+                color = "#555555"
+                delta_text = "₹0.00"
+
+            self.year_total_label.setText(
+                f"Year Total: ₹{year_total:,.2f} ({indicator} vs {year - 1}: {delta_text})"
+            )
+            self.year_total_label.setStyleSheet(f"font-weight: bold; color: {color};")
 
             chart = QChart()
             chart.setTitle(f"Monthly Total Expenses - {year}")
