@@ -1,0 +1,195 @@
+{% extends "base.html" %} {% block title %}Overview · Ledgerly{% endblock %} {%
+block content %}
+<section class="toolbar">
+  <div>
+    <strong>{{ month_label }}</strong
+    ><span class="muted"> · spending and income snapshot</span>
+  </div>
+  <form method="get">
+    <label for="month">Month</label
+    ><input
+      id="month"
+      type="month"
+      name="month"
+      value="{{ month }}"
+      onchange="this.form.submit()"
+    />
+  </form>
+</section>
+<section class="metrics">
+  <article class="metric">
+    <span>Total income</span
+    ><strong class="income-text">{{ data.income_total|currency }}</strong
+    ><small>{{ data.income_count }} income entries</small>
+  </article>
+  <article class="metric">
+    <span>Total spent</span
+    ><strong class="expense-text">{{ data.expense_total|currency }}</strong
+    ><small>{{ data.expense_count }} expense entries</small>
+  </article>
+  <article class="metric">
+    <span>Net balance</span
+    ><strong
+      class="{{ 'income-text' if data.income_total >= data.expense_total else 'expense-text' }}"
+      >{{ (data.income_total - data.expense_total)|currency }}</strong
+    ><small>Income minus expenses</small>
+  </article>
+  <article class="metric">
+    <span>Salary received</span
+    ><strong class="income-text">{{ data.salary_total|currency }}</strong
+    ><small>Income category: Salary</small>
+  </article>
+</section>
+<div class="grid charts">
+  <article class="card chart-card wide">
+    <div class="card-head">
+      <div>
+        <h2>Cash flow</h2>
+        <p>Monthly income versus expenditure</p>
+      </div>
+    </div>
+    <div id="cashflow"></div>
+  </article>
+  <article class="card chart-card">
+    <div class="card-head">
+      <div>
+        <h2>Where it goes</h2>
+        <p>Expenses by category</p>
+      </div>
+    </div>
+    <div id="categories"></div>
+    {% if not category_labels %}
+    <p class="empty">No expenses recorded for this month.</p>
+    {% endif %}
+  </article>
+</div>
+<div class="grid lower">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <h2>Salary & income received</h2>
+        <p>Starting September 2026 and beyond</p>
+      </div>
+      <a class="text-link" href="#income-form">+ Add income</a>
+    </div>
+    {% if data.recent_income %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Source</th>
+            <th>Category</th>
+            <th class="right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in data.recent_income %}
+          <tr>
+            <td>{{ row[0].strftime('%d %b %Y') }}</td>
+            <td>{{ row[2] }}</td>
+            <td><span class="pill">{{ row[3] }}</span></td>
+            <td class="right income-text">{{ row[1]|currency }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">No income has been added for this month yet.</p>
+    {% endif %}
+  </article>
+  <article class="card form-card" id="income-form">
+    <div class="card-head">
+      <div>
+        <h2>Add income</h2>
+        <p>Salary, freelance, refunds or other credits</p>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('add_income') }}" class="form-grid">
+      <input type="hidden" name="month" value="{{ month }}" /><label
+        >Date<input
+          type="date"
+          name="income_date"
+          value="{{ month }}-01"
+          required
+      /></label>
+      <label
+        >Amount (₹)<input
+          type="number"
+          name="amount"
+          min="0.01"
+          step="0.01"
+          required
+      /></label>
+      <label
+        >Source<input name="source" placeholder="e.g. Acme Corp" required
+      /></label>
+      <label
+        >Category<select name="category">
+          <option>Salary</option>
+          <option>Freelance</option>
+          <option>Refund</option>
+          <option>Other income</option>
+        </select></label
+      >
+      <label class="full"
+        >Description<input name="description" placeholder="Optional note"
+      /></label>
+      <button class="button income-button full" type="submit">
+        Save income
+      </button>
+    </form>
+  </article>
+</div>
+<section class="card expense-form" id="expense-form">
+  <div class="card-head">
+    <div>
+      <h2>Record an expense</h2>
+      <p>Keep your existing spending history and add new entries here.</p>
+    </div>
+  </div>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="month" value="{{ month }}" /><label
+      >Date<input
+        type="date"
+        name="expense_date"
+        value="{{ month }}-01"
+        required
+    /></label>
+    <label
+      >Amount (₹)<input
+        type="number"
+        name="amount"
+        min="0.01"
+        step="0.01"
+        required
+    /></label>
+    <label
+      >Category<input
+        name="category"
+        placeholder="Food, rent, travel..."
+        required
+    /></label>
+    <label
+      >Payment method<input
+        name="payment_method"
+        placeholder="Cash, card, UPI..."
+        required
+    /></label>
+    <label
+      >Description<input name="description" placeholder="Optional description"
+    /></label>
+    <label>Notes<input name="notes" placeholder="Optional notes" /></label>
+    <button class="button full" type="submit">Save expense</button>
+  </form>
+</section>
+<script>
+  const money = value => `₹${value.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+  Plotly.newPlot('cashflow', [
+    {x: {{ monthly_labels|tojson }}, y: {{ monthly_income|tojson }}, name: 'Income', type: 'bar', marker: {color: '#35b889'}},
+    {x: {{ monthly_labels|tojson }}, y: {{ monthly_expenses|tojson }}, name: 'Expenses', type: 'bar', marker: {color: '#ff735c'}}
+  ], {barmode: 'group', margin: {t: 12, r: 18, b: 35, l: 55}, paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', legend: {orientation: 'h', y: 1.15}, yaxis: {tickprefix: '₹', gridcolor: '#e8eceb'}, xaxis: {fixedrange: true}}, {responsive: true, displayModeBar: false});
+  {% if category_labels %}Plotly.newPlot('categories', [{labels: {{ category_labels|tojson }}, values: {{ category_values|tojson }}, hole: .64, type: 'pie', marker: {colors: ['#6759e8','#35b889','#ffb547','#ff735c','#4a9fd8','#a78bfa']}, textinfo: 'label+percent', textposition: 'outside', hovertemplate: '%{label}<br>₹%{value:,.2f}<extra></extra>'}], {margin: {t: 10, r: 10, b: 10, l: 10}, paper_bgcolor: 'transparent', showlegend: false}, {responsive: true, displayModeBar: false});{% endif %}
+</script>
+{% endblock %}

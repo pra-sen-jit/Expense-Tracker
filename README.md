@@ -1,248 +1,130 @@
-# Expense Tracker Desktop Application
+# Ledgerly Expense Tracker
 
-A production-ready personal expense tracker desktop application built with Python, PySide6, and PostgreSQL.
+Ledgerly is a browser-based personal finance tracker built with Flask and
+PostgreSQL (including Neon). It preserves the existing `expenses` table and
+adds a separate `income` table for salary and other credits.
 
-## Features
+## What it does
 
-- ✅ Desktop GUI built with PySide6 (Qt for Python)
-- ✅ PostgreSQL database connection with connection pooling
-- ✅ Automatic table and trigger creation
-- ✅ Add new expense records with form validation
-- ✅ Execute custom SQL SELECT queries
-- ✅ Display query results in a table view
-- ✅ Parameterized queries to prevent SQL injection
-- ✅ Error handling and logging
-- ✅ Clean modular architecture
-- ✅ Environment-based configuration
+- Dashboard with monthly income, expenditure, net balance, and entry counts.
+- Salary received KPI for the selected month (salary is an income category).
+- Cash-flow chart comparing income and expenses across the selected year.
+- Expense-by-category chart generated from the database.
+- Separate forms for recording expenses and income.
+- Query lab that displays read-only SQL results in a table.
+- Existing expense records remain untouched.
 
-## Prerequisites
+## Requirements
 
-- Python 3.11 or higher
-- PostgreSQL database (or Neon serverless Postgres)
-- pip (Python package manager)
+- Python 3.11 or newer
+- A PostgreSQL database or Neon project
+- A database URL with SSL enabled, for example:
+  `postgresql://user:password@host.neon.tech/neondb?sslmode=require`
 
-## Installation
+## Setup on Windows
 
-### 1. Clone or navigate to the project directory
+From PowerShell in this folder:
 
-```bash
-cd Expense-Tracker
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-### 2. Install dependencies
+Edit `.env` and set:
 
-```bash
-pip install -r requirements.txt
+```dotenv
+DATABASE_URL=postgresql://user:password@host.neon.tech/neondb?sslmode=require
+SECRET_KEY=replace-with-a-long-random-value
+FLASK_DEBUG=false
 ```
 
-### 3. Set up environment variables
+Never commit `.env`. It is ignored by Git.
 
-**Option A: Using .env file (recommended)**
+## Start the web application
 
-```bash
-# Copy the example file
-cp .env.example .env
-
-# Edit .env with your database URL
-# DATABASE_URL=postgresql://username:password@host.neon.tech/database?sslmode=require
+```powershell
+.\.venv\Scripts\python.exe app.py
 ```
 
-**Option B: Export environment variable**
+Open **http://127.0.0.1:5000** in a browser. Keep the PowerShell process
+running while using the app. To stop it, press `Ctrl+C`.
 
-```bash
-# On Linux/macOS:
-export DATABASE_URL="postgresql://username:password@host.neon.tech/database?sslmode=require"
+The application creates the additive `income` table automatically on first
+start. It does not migrate, rewrite, or delete any row in `expenses`.
 
-# On Windows (PowerShell):
-$env:DATABASE_URL="postgresql://username:password@host.neon.tech/database?sslmode=require"
-```
+## Database schema
 
-### 4. Get your Neon Database URL
-
-1. Go to [Neon Console](https://console.neon.tech)
-2. Create a new project or select an existing one
-3. Click "Connection string" and copy the PostgreSQL URL
-4. The URL format should be: `postgresql://user:password@host.neon.tech/database?sslmode=require`
-
-## Running the Application
-
-```bash
-python main.py
-```
-
-The application will:
-
-1. Load the DATABASE_URL from environment variables
-2. Connect to your PostgreSQL database
-3. Create the `expenses` table if it doesn't exist
-4. Create a trigger for auto-updating the `updated_at` column
-5. Launch the GUI window
-
-## Database Schema
-
-The application creates the following table:
+The existing table remains:
 
 ```sql
-CREATE TABLE expenses (
-    id BIGSERIAL PRIMARY KEY,
-    expense_date DATE NOT NULL,
-    amount NUMERIC(10,2) NOT NULL CHECK (amount >= 0),
-    category VARCHAR(100) NOT NULL,
-    payment_method VARCHAR(100) NOT NULL,
-    description VARCHAR(255),
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+expenses (
+  id, expense_date, amount, category, payment_method,
+  description, notes, created_at, updated_at
+)
+```
+
+The web app creates this separate table:
+
+```sql
+CREATE TABLE income (
+  id BIGSERIAL PRIMARY KEY,
+  income_date DATE NOT NULL,
+  amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  source VARCHAR(100) NOT NULL,
+  category VARCHAR(100) NOT NULL DEFAULT 'Other income',
+  description VARCHAR(255),
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-A trigger automatically updates the `updated_at` timestamp on any record update.
+Choose **Salary** as the income category when recording monthly salary. The
+dashboard's month selector can be set to September 2026 or any later month.
 
-## Usage
+## Query lab
 
-### Adding an Expense
-
-1. Fill in the form on the left side:
-   - **Expense Date**: Select the date of the expense
-   - **Amount**: Enter the expense amount
-   - **Category**: e.g., "Food", "Transportation", "Utilities"
-   - **Payment Method**: e.g., "Cash", "Credit Card", "Debit Card"
-   - **Description** (optional): Brief description of the expense
-   - **Notes** (optional): Additional notes
-
-2. Click **"Add Expense"** button
-3. You'll see a success message if the expense is added
-
-### Running Queries
-
-1. Enter a **SELECT query** in the "Custom SQL" text area on the right:
-
-   ```sql
-   SELECT * FROM expenses WHERE amount > 50 ORDER BY expense_date DESC;
-   ```
-
-2. Click **"Run Query"** button
-3. Results will be displayed in the table below
-
-**Note**: Only SELECT queries are allowed for security reasons.
-
-## Project Structure
-
-```
-Expense-Tracker/
-├── main.py           # Application entry point
-├── db.py             # Database connection and operations
-├── ui.py             # GUI components and logic
-├── requirements.txt  # Python dependencies
-├── .env.example      # Environment variable template
-├── .env              # Environment variables (create from .env.example)
-├── expense_tracker.log  # Application logs (created at runtime)
-└── README.md         # This file
-```
-
-## Security Features
-
-- ✅ **Parameterized Queries**: All user inputs are safely parameterized to prevent SQL injection
-- ✅ **SELECT-Only Queries**: Only SELECT statements are allowed in the query executor
-- ✅ **Environment Variables**: Database credentials are loaded from environment, not hardcoded
-- ✅ **Connection Pooling**: Efficient and secure connection management
-- ✅ **Error Handling**: Graceful error messages without exposing sensitive information
-
-## Logging
-
-The application logs all operations to:
-
-- **Console**: Real-time output
-- **File**: `expense_tracker.log` (created in the application directory)
-
-Log levels:
-
-- `INFO`: General application flow
-- `WARNING`: Validation or user errors
-- `ERROR`: Database or critical errors
-
-## Error Handling
-
-The application handles common errors gracefully:
-
-- Invalid environment variables
-- Database connection failures
-- SQL syntax errors
-- Missing required fields
-- Invalid data types
-
-All errors are displayed to the user in a user-friendly format.
-
-## Example Queries
+Use the **Query lab** navigation item to run read-only `SELECT` statements.
+Examples:
 
 ```sql
--- Get all expenses for a specific month
-SELECT * FROM expenses WHERE expense_date >= '2026-01-01' AND expense_date < '2026-02-01';
+SELECT * FROM expenses
+ORDER BY expense_date DESC
+LIMIT 25;
 
--- Get spending by category
-SELECT category, SUM(amount) as total FROM expenses GROUP BY category ORDER BY total DESC;
+SELECT category, SUM(amount) AS total
+FROM expenses
+GROUP BY category
+ORDER BY total DESC;
 
--- Get largest expenses
-SELECT expense_date, category, amount, description FROM expenses ORDER BY amount DESC LIMIT 10;
+SELECT * FROM income
+ORDER BY income_date DESC;
+```
 
--- Get average spending per day
-SELECT AVG(amount) as avg_daily_spending FROM expenses;
+The server rejects statements that do not begin with `SELECT`. Use the entry
+forms for inserts so validation and parameterized queries are preserved.
 
--- Get payment methods used
-SELECT COUNT(*) as count, payment_method FROM expenses GROUP BY payment_method;
+## Project structure
+
+```text
+app.py                 Flask routes and request validation
+db.py                  PostgreSQL pool, schema, writes, and reports
+templates/base.html    Shared layout and navigation
+templates/dashboard.html
+templates/queries.html
+static/app.css         Responsive dashboard styling
+requirements.txt       Python dependencies
+.env.example           Environment variable template
 ```
 
 ## Troubleshooting
 
-### Connection Error: "could not translate host name"
-
-- Check your DATABASE_URL is correct
-- Ensure you have internet connection to reach Neon servers
-- Verify the hostname is correct
-
-### Connection Error: "password authentication failed"
-
-- Check your username and password in DATABASE_URL
-- Ensure the account has access to the database
-
-### Table Not Found Error
-
-- The application creates the table automatically
-- Check the logs in `expense_tracker.log` for more details
-- Ensure you have CREATE TABLE permissions
-
-### Query Errors
-
-- Only SELECT queries are allowed
-- Check SQL syntax
-- Use the query examples above as reference
-
-## Production Deployment
-
-This application is suitable for personal desktop use. For production deployment with multiple users:
-
-1. Implement user authentication
-2. Add more granular error logging
-3. Implement backup strategies
-4. Add data validation rules
-5. Consider rate limiting for queries
-6. Implement audit logging
-
-## Dependencies
-
-- **PySide6**: Qt framework for Python GUI (v6.6.1)
-- **psycopg2-binary**: PostgreSQL database adapter (v2.9.9)
-- **python-dotenv**: Environment variable loader (v1.0.0)
-
-## License
-
-This is a personal project. Use as needed.
-
-## Support
-
-For issues or questions, check:
-
-1. Application logs: `expense_tracker.log`
-2. Database connection settings in `.env`
-3. Python version: `python --version` (should be 3.11+)
-4. Dependencies: `pip list | grep -E "PySide6|psycopg2|python-dotenv"`
+- **`DATABASE_URL` is not set:** copy `.env.example` to `.env` and fill in the
+  Neon connection string.
+- **Connection or SSL errors:** copy the connection string from Neon and keep
+  `sslmode=require`.
+- **Port 5000 is busy:** run `app.run(port=5001)` temporarily in `app.py` and
+  browse to `http://127.0.0.1:5001`.
+- **Charts do not render:** the chart library is loaded from Plotly's CDN, so
+  the browser needs internet access; the tables and forms still work without
+  chart rendering.

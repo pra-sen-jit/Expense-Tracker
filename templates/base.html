@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Expense Ledger{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">₹</span><span>Ledgerly</span>
+      </div>
+      <p class="eyebrow">PERSONAL FINANCE</p>
+      <nav>
+        <a
+          class="{{ 'active' if request.endpoint == 'dashboard' else '' }}"
+          href="{{ url_for('dashboard') }}"
+          >Overview</a
+        >
+        <a
+          class="{{ 'active' if request.endpoint == 'queries' else '' }}"
+          href="{{ url_for('queries') }}"
+          >Query lab</a
+        >
+      </nav>
+      <div class="sidebar-note">Every rupee accounted for.</div>
+    </aside>
+    <main class="content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">YOUR FINANCIAL HOME</p>
+          <h1>{% block heading %}Overview{% endblock %}</h1>
+        </div>
+        <span class="status-dot">● Live database</span>
+      </header>
+      {% with messages = get_flashed_messages(with_categories=true) %} {% for
+      category, message in messages %}
+      <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %} {% endwith %} {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

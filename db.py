@@ -1,16 +1,14 @@
 """
 Database module for Expense Tracker application.
 
-Handles:
-- PostgreSQL connection management
-- Table and trigger creation
-- Query execution with parameterized statements
-- Connection pooling
+Handles PostgreSQL connection management, schema setup, inserts, reporting,
+and the read-only query dashboard used by the web application.
 """
 
 import logging
 import psycopg2
-from psycopg2 import pool, Error
+import psycopg2.pool
+from psycopg2 import Error
 from typing import List, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -47,13 +45,16 @@ class DatabaseManager:
             raise
 
     def _initialize_schema(self) -> None:
-        """Create table and trigger if they don't exist."""
+        """Create additive application tables and triggers if needed."""
         try:
             self._execute_statement(self._get_create_table_sql())
             logger.info("Expenses table created or already exists")
 
             self._execute_statement(self._get_create_trigger_sql())
             logger.info("Trigger for updated_at column created or already exists")
+            self._execute_statement(self._get_create_income_table_sql())
+            self._execute_statement(self._get_create_income_trigger_sql())
+            logger.info("Income table and trigger created or already exist")
         except Error as e:
             logger.error(f"Failed to initialize schema: {e}")
             raise
@@ -93,6 +94,43 @@ class DatabaseManager:
         BEFORE UPDATE ON expenses
         FOR EACH ROW
         EXECUTE FUNCTION update_expenses_updated_at();
+        """
+
+    @staticmethod
+    def _get_create_income_table_sql() -> str:
+        """Return the additive income table definition."""
+        return """
+        CREATE TABLE IF NOT EXISTS income (
+            id BIGSERIAL PRIMARY KEY,
+            income_date DATE NOT NULL,
+            amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+            source VARCHAR(100) NOT NULL,
+            category VARCHAR(100) NOT NULL DEFAULT 'Other income',
+            description VARCHAR(255),
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+
+    @staticmethod
+    def _get_create_income_trigger_sql() -> str:
+        """Return the trigger definition for income updates."""
+        return """
+        CREATE OR REPLACE FUNCTION update_income_updated_at()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.updated_at = CURRENT_TIMESTAMP;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS income_updated_at_trigger ON income;
+
+        CREATE TRIGGER income_updated_at_trigger
+        BEFORE UPDATE ON income
+        FOR EACH ROW
+        EXECUTE FUNCTION update_income_updated_at();
         """
 
     def get_connection(self):
@@ -244,6 +282,129 @@ class DatabaseManager:
             if conn:
                 self.return_connection(conn)
 
+    def insert_income(
+        self,
+        income_date: str,
+        amount: float,
+        source: str,
+        category: str = "Other income",
+        description: str = None,
+        notes: str = None,
+    ) -> int:
+        """Insert an income record without changing the legacy expenses table."""
+        query = """
+        INSERT INTO income
+            (income_date, amount, source, category, description, notes)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id;
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    query,
+                    (income_date, amount, source, category, description, notes),
+                )
+                income_id = cursor.fetchone()[0]
+            conn.commit()
+            logger.info("Income record inserted with ID: %s", income_id)
+            return income_id
+        except Error:
+            if conn:
+                conn.rollback()
+            logger.exception("Failed to insert income")
+            raise
+        finally:
+            if conn:
+                self.return_connection(conn)
+
+    def get_dashboard_data(self, start_date: str, end_date: str) -> Dict[str, Any]:
+        """Return dashboard aggregates for an inclusive start/exclusive end range."""
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        COALESCE((SELECT SUM(amount) FROM expenses
+                                  WHERE expense_date >= %s AND expense_date < %s), 0),
+                        COALESCE((SELECT SUM(amount) FROM income
+                                  WHERE income_date >= %s AND income_date < %s), 0),
+                        COALESCE((SELECT SUM(amount) FROM income
+                                  WHERE income_date >= %s AND income_date < %s
+                                    AND category = 'Salary'), 0),
+                        (SELECT COUNT(*) FROM expenses
+                         WHERE expense_date >= %s AND expense_date < %s),
+                        (SELECT COUNT(*) FROM income
+                         WHERE income_date >= %s AND income_date < %s)
+                    """,
+                    (start_date, end_date, start_date, end_date,
+                     start_date, end_date, start_date, end_date,
+                     start_date, end_date),
+                )
+                totals = cursor.fetchone()
+                cursor.execute(
+                    """
+                    SELECT category, SUM(amount) AS total
+                    FROM expenses
+                    WHERE expense_date >= %s AND expense_date < %s
+                    GROUP BY category ORDER BY total DESC
+                    """,
+                    (start_date, end_date),
+                )
+                categories = cursor.fetchall()
+                cursor.execute(
+                    """
+                    SELECT month, expense_total, income_total
+                    FROM (
+                        SELECT EXTRACT(MONTH FROM expense_date)::INT AS month,
+                               SUM(amount) AS expense_total
+                        FROM expenses
+                        WHERE expense_date >= %s AND expense_date < %s
+                        GROUP BY month
+                    ) expenses_by_month
+                    FULL OUTER JOIN (
+                        SELECT EXTRACT(MONTH FROM income_date)::INT AS month,
+                               SUM(amount) AS income_total
+                        FROM income
+                        WHERE income_date >= %s AND income_date < %s
+                        GROUP BY month
+                    ) income_by_month USING (month)
+                    ORDER BY month
+                    """,
+                    (start_date, end_date, start_date, end_date),
+                )
+                monthly = cursor.fetchall()
+                cursor.execute(
+                    """
+                    SELECT income_date, amount, source, category, description
+                    FROM income
+                    WHERE income_date >= %s AND income_date < %s
+                    ORDER BY income_date DESC, id DESC
+                    LIMIT 20
+                    """,
+                    (start_date, end_date),
+                )
+                recent_income = cursor.fetchall()
+            return {
+                "expense_total": totals[0],
+                "income_total": totals[1],
+                "salary_total": totals[2],
+                "expense_count": totals[3],
+                "income_count": totals[4],
+                "categories": categories,
+                "monthly": monthly,
+                "recent_income": recent_income,
+            }
+        except Error:
+            logger.exception("Failed to load dashboard data")
+            raise
+        finally:
+            if conn:
+                self.return_connection(conn)
+
     def get_monthly_totals_by_year(self, year: int) -> List[Dict[str, Any]]:
         """
         Return monthly expense totals for a given year.
@@ -276,8 +437,12 @@ class DatabaseManager:
         Returns:
             True if query is a SELECT statement, False otherwise
         """
-        cleaned = query.strip().upper()
-        return cleaned.startswith("SELECT")
+        cleaned = query.strip()
+        if not cleaned:
+            return False
+        if cleaned.endswith(";"):
+            cleaned = cleaned[:-1].rstrip()
+        return ";" not in cleaned and cleaned.upper().startswith("SELECT")
 
     def close(self) -> None:
         """Close all connections in the pool."""

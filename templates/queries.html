@@ -1,0 +1,60 @@
+{% extends "base.html" %} {% block title %}Query lab · Ledgerly{% endblock %} {%
+block heading %}Query lab{% endblock %} {% block content %}
+<section class="card query-card">
+  <div class="card-head">
+    <div>
+      <h2>Explore your data</h2>
+      <p>
+        Run read-only SQL against expenses and income. Only SELECT statements
+        are allowed.
+      </p>
+    </div>
+  </div>
+  <form method="post">
+    <textarea
+      name="query"
+      rows="6"
+      placeholder="SELECT category, SUM(amount) AS total&#10;FROM expenses&#10;GROUP BY category&#10;ORDER BY total DESC;"
+    >
+{{ query }}</textarea
+    ><button class="button" type="submit">Run query</button>
+  </form>
+  {% if error %}
+  <div class="flash error">{{ error }}</div>
+  {% endif %} {% if columns %}
+  <div class="table-wrap result-table">
+    <table>
+      <thead>
+        <tr>
+          {% for column in columns %}
+          <th>{{ column }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in results %}
+        <tr>
+          {% for column in columns %}
+          <td>{{ row[column] }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted result-count">{{ results|length }} row(s)</p>
+  {% elif request.method == 'POST' and not error %}
+  <p class="empty">The query returned no rows.</p>
+  {% endif %}
+</section>
+<section class="card examples">
+  <h2>Useful queries</h2>
+  <div class="query-examples">
+    <code>SELECT * FROM expenses ORDER BY expense_date DESC LIMIT 25;</code
+    ><code
+      >SELECT category, SUM(amount) AS total FROM expenses GROUP BY category
+      ORDER BY total DESC;</code
+    ><code>SELECT * FROM income ORDER BY income_date DESC;</code>
+  </div>
+</section>
+{% endblock %}
