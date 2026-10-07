@@ -18,6 +18,15 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "local-development-key")
 
+
+@app.after_request
+def disable_browser_caching(response):
+    """Ensure dashboard data is fetched from the current server process."""
+    if request.path in ("/", "/queries"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 database_url = os.getenv("DATABASE_URL")
 if not database_url:
     raise RuntimeError("DATABASE_URL environment variable is not set.")
@@ -34,6 +43,17 @@ def _period_bounds(selected_month: str) -> tuple[str, str, str]:
         raise ValueError("Choose a valid month.")
     end = date(year + (month == 12), 1 if month == 12 else month + 1, 1)
     return start.isoformat(), end.isoformat(), start.strftime("%B %Y")
+
+
+def _year_bounds(selected_month: str) -> tuple[str, str]:
+    """Return the full calendar-year bounds for a selected YYYY-MM month."""
+    try:
+        year = int(selected_month.split("-")[0])
+        start = date(year, 1, 1)
+        end = date(year + 1, 1, 1)
+    except (AttributeError, ValueError):
+        raise ValueError("Choose a valid month.")
+    return start.isoformat(), end.isoformat()
 
 
 def _amount(value: str) -> Decimal:
@@ -76,27 +96,36 @@ def dashboard():
     try:
         start, end, month_label = _period_bounds(month)
         data = db_manager.get_dashboard_data(start, end)
+        year_start, year_end = _year_bounds(month)
+        monthly_cashflow = db_manager.get_monthly_cashflow_by_year(
+            year_start, year_end
+        )
     except (ValueError, Error):
         logger.exception("Could not load dashboard")
         flash("Choose a valid month and verify the database connection.", "error")
         month = date.today().strftime("%Y-%m")
         start, end, month_label = _period_bounds(month)
         data = db_manager.get_dashboard_data(start, end)
+        year_start, year_end = _year_bounds(month)
+        monthly_cashflow = db_manager.get_monthly_cashflow_by_year(
+            year_start, year_end
+        )
     category_labels = [row[0] for row in data["categories"]]
     category_values = [float(row[1]) for row in data["categories"]]
-    monthly_map = {row[0]: row for row in data["monthly"]}
+    monthly_map = {row[0]: row for row in monthly_cashflow}
     return render_template(
         "dashboard.html",
         data=data,
         month=month,
         month_label=month_label,
+        chart_year=month[:4],
         category_labels=category_labels,
         category_values=category_values,
         monthly_labels=["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
-        monthly_expenses=[float(monthly_map.get(index, (index, 0, 0))[1] or 0)
+        monthly_expenses=[float(monthly_map[index][1] or 0)
                           for index in range(1, 13)],
-        monthly_income=[float(monthly_map.get(index, (index, 0, 0))[2] or 0)
+        monthly_income=[float(monthly_map[index][2] or 0)
                         for index in range(1, 13)],
     )
 
@@ -144,4 +173,8 @@ def queries():
 
 
 if __name__ == "__main__":
-    app.run(debug=os.getenv("FLASK_DEBUG", "").lower() == "true")
+    app.run(
+        debug=os.getenv("FLASK_DEBUG", "").lower() == "true",
+        host=os.getenv("FLASK_HOST", "127.0.0.1"),
+        port=int(os.getenv("FLASK_PORT", "5000")),
+    )

@@ -49,6 +49,24 @@ Never commit `.env`. It is ignored by Git.
 Open **http://127.0.0.1:5000** in a browser. Keep the PowerShell process
 running while using the app. To stop it, press `Ctrl+C`.
 
+Use the project virtual-environment interpreter explicitly. If `python.exe`
+resolves to a different system installation, it may not have Flask,
+`python-dotenv`, or the PostgreSQL driver installed:
+
+```powershell
+.\.venv\Scripts\python.exe app.py
+```
+
+If port 5000 is already occupied by an older server, stop that server first
+with `Ctrl+C`, or start this app on another port:
+
+```powershell
+$env:FLASK_PORT=5001
+.\.venv\Scripts\python.exe app.py
+```
+
+Then open **http://127.0.0.1:5001**.
+
 The application creates the additive `income` table automatically on first
 start. It does not migrate, rewrite, or delete any row in `expenses`.
 

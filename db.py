@@ -405,6 +405,49 @@ class DatabaseManager:
             if conn:
                 self.return_connection(conn)
 
+    def get_monthly_cashflow_by_year(
+        self, start_date: str, end_date: str
+    ) -> List[Tuple[Any, Any, Any]]:
+        """Return income and expenses grouped across every month in a year."""
+        query = """
+        WITH months AS (
+            SELECT generate_series(1, 12)::INT AS month
+        ),
+        expenses_by_month AS (
+            SELECT EXTRACT(MONTH FROM expense_date)::INT AS month,
+                   SUM(amount) AS expense_total
+            FROM expenses
+            WHERE expense_date >= %s AND expense_date < %s
+            GROUP BY month
+        ),
+        income_by_month AS (
+            SELECT EXTRACT(MONTH FROM income_date)::INT AS month,
+                   SUM(amount) AS income_total
+            FROM income
+            WHERE income_date >= %s AND income_date < %s
+            GROUP BY month
+        )
+        SELECT months.month,
+               COALESCE(expenses_by_month.expense_total, 0) AS expense_total,
+               COALESCE(income_by_month.income_total, 0) AS income_total
+        FROM months
+        LEFT JOIN expenses_by_month USING (month)
+        LEFT JOIN income_by_month USING (month)
+        ORDER BY months.month;
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(query, (start_date, end_date, start_date, end_date))
+                return cursor.fetchall()
+        except Error:
+            logger.exception("Failed to load yearly cash-flow data")
+            raise
+        finally:
+            if conn:
+                self.return_connection(conn)
+
     def get_monthly_totals_by_year(self, year: int) -> List[Dict[str, Any]]:
         """
         Return monthly expense totals for a given year.
