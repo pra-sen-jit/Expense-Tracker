@@ -60,5 +60,6 @@ Thumbs.db
 .coverage
 htmlcov/
 
-# Files
+# Files & directories
 Expense-Tracker.vbs
+.agent

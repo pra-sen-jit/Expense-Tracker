@@ -45,7 +45,9 @@ block content %}
     <div class="card-head">
       <div>
         <h2>Cash flow · {{ chart_year }}</h2>
-        <p>All available income versus expenditure for the full calendar year</p>
+        <p>
+          All available income versus expenditure for the full calendar year
+        </p>
       </div>
     </div>
     <div id="cashflow"></div>
@@ -58,6 +60,19 @@ block content %}
       </div>
     </div>
     <div id="categories"></div>
+    {% if category_labels %}
+    {% set category_total = category_values|sum %}
+    <div class="category-legend" aria-label="Expense categories">
+      {% for label in category_labels %}
+      {% set value = category_values[loop.index0] %}
+      <div class="category-legend-item">
+        <span class="category-swatch category-swatch-{{ loop.index0 % 6 }}"></span>
+        <span class="category-name" title="{{ label }}">{{ label }}</span>
+        <span class="category-percent">{{ "%.1f"|format(value / category_total * 100) }}%</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if not category_labels %}
     <p class="empty">No expenses recorded for this month.</p>
     {% endif %}
@@ -190,6 +205,12 @@ block content %}
     {x: {{ monthly_labels|tojson }}, y: {{ monthly_income|tojson }}, name: 'Income', type: 'bar', marker: {color: '#35b889'}},
     {x: {{ monthly_labels|tojson }}, y: {{ monthly_expenses|tojson }}, name: 'Expenses', type: 'bar', marker: {color: '#ff735c'}}
   ], {barmode: 'group', margin: {t: 12, r: 18, b: 35, l: 55}, paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', legend: {orientation: 'h', y: 1.15}, yaxis: {tickprefix: '₹', gridcolor: '#e8eceb'}, xaxis: {fixedrange: true}}, {responsive: true, displayModeBar: false});
-  {% if category_labels %}Plotly.newPlot('categories', [{labels: {{ category_labels|tojson }}, values: {{ category_values|tojson }}, hole: .64, type: 'pie', marker: {colors: ['#6759e8','#35b889','#ffb547','#ff735c','#4a9fd8','#a78bfa']}, textinfo: 'label+percent', textposition: 'outside', hovertemplate: '%{label}<br>₹%{value:,.2f}<extra></extra>'}], {margin: {t: 10, r: 10, b: 10, l: 10}, paper_bgcolor: 'transparent', showlegend: false}, {responsive: true, displayModeBar: false});{% endif %}
+  {% if category_labels %}Plotly.newPlot('categories', [{labels: {{ category_labels|tojson }}, values: {{ category_values|tojson }}, hole: .64, type: 'pie', marker: {colors: ['#6759e8','#35b889','#ffb547','#ff735c','#4a9fd8','#a78bfa']}, textinfo: 'none', hovertemplate: '%{label}<br>₹%{value:,.2f}<extra></extra>'}], {margin: {t: 8, r: 8, b: 8, l: 8}, paper_bgcolor: 'transparent', showlegend: false}, {responsive: true, displayModeBar: false});{% endif %}
+  window.addEventListener('resize', () => {
+    ['cashflow', 'categories'].forEach(id => {
+      const chart = document.getElementById(id);
+      if (chart && chart.data) Plotly.Plots.resize(chart);
+    });
+  });
 </script>
 {% endblock %}
